@@ -1,7 +1,7 @@
 import os
 import sys
 
-# === 1. ИСПРАВЛЕНИЕ ДЛЯ STREAMLIT CLOUD (SQLite) ===
+# === 1. ХАК ДЛЯ SQLITE (Streamlit Cloud) ===
 try:
     __import__('pysqlite3')
     sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
@@ -13,128 +13,112 @@ from pydantic import BaseModel, Field
 from crewai import Agent, Task, Crew
 from crewai.tools import tool
 from crewai_tools import FileReadTool
+# ИМПОРТИРУЕМ ПРЯМОЙ КОННЕКТОР
+from langchain_google_genai import ChatGoogleGenerativeAI
 
-# --- Настройка интерфейса ---
-st.set_page_config(page_title="Анализатор договоров (Вариант 13)", layout="wide")
+# --- Настройка страницы ---
+st.set_page_config(page_title="Reviewer Pro 2026", layout="wide")
 
 # ==========================================
-# 🔑 ЗОНА НАСТРОЕК
+# 🔑 СЕКРЕТЫ И НАСТРОЙКИ
 # ==========================================
-st.sidebar.header("🔑 Доступ")
-api_key = st.sidebar.text_input("Введите свежий Gemini API Key", type="password")
+# Пытаемся взять из Secrets, если нет — из ввода
+if "GEMINI_API_KEY" in st.secrets:
+    api_key = st.secrets["GEMINI_API_KEY"]
+else:
+    api_key = st.sidebar.text_input("Введите Gemini API Key", type="password")
 
 st.sidebar.markdown("---")
-st.sidebar.header("📚 База знаний")
 university_regulations = st.sidebar.text_area(
     "Регламент университета:",
-    "Договор должен содержать: 1. Реквизиты сторон. 2. Сроки практики. 3. Обязанности по охране труда. "
-    "Договор НЕ должен содержать: Штрафов для студента или передачи прав без компенсации."
+    "Договор должен содержать: реквизиты, сроки, охрану труда. "
+    "Запрещено: штрафы для студента, отчуждение прав без оплаты."
 )
 
 
-# --- Структура вывода (Pydantic) ---
+# --- Структура Pydantic ---
 class ContractAnalysis(BaseModel):
     decision: str = Field(description="Вердикт: Одобрено / На доработку / Отклонено")
-    missing_points: list[str] = Field(description="Список отсутствующих элементов")
-    risks: list[str] = Field(description="Найденные риски")
-    summary: str = Field(description="Резюме для студента")
+    missing_points: list[str] = Field(description="Что отсутствует")
+    risks: list[str] = Field(description="Риски")
+    summary: str = Field(description="Итог")
 
 
 # --- Инструменты ---
 file_reader = FileReadTool()
 
 
-@tool("Legal Keywords Checker")
-def check_legal_keywords(text: str) -> str:
-    """Ищет наличие ключевых юридических терминов."""
-    keywords = ["практика", "ответственность", "срок", "обучение"]
+@tool("Legal Checker")
+def legal_tool(text: str) -> str:
+    """Проверка ключевых слов."""
+    keywords = ["практика", "срок", "договор"]
     found = [w for w in keywords if w.lower() in text.lower()]
-    return f"Найдено совпадений: {len(found)} из {len(keywords)}."
+    return f"Найдено: {len(found)}"
 
 
 # ==========================================
-# 🖥️ ЛОГИКА ПРИЛОЖЕНИЯ
+# 🖥️ ОСНОВНОЙ БЛОК
 # ==========================================
-st.title("📄 Анализатор договоров на практику")
+st.title("📄 Анализатор договоров (Вариант 13)")
+uploaded_file = st.file_uploader("Загрузите файл", type=['txt', 'docx'])
 
-uploaded_file = st.file_uploader("Загрузите договор (.txt или .docx)", type=['txt', 'docx'])
-
-if st.button("Запустить анализ") and uploaded_file:
+if st.button("Начать анализ") and uploaded_file:
     if not api_key:
-        st.error("Ошибка: Введите API ключ в боковой панели!")
+        st.error("Нет ключа!")
     else:
-        # Устанавливаем ключ
-        os.environ["GEMINI_API_KEY"] = api_key
-        # Используем стандартную модель для свежего ключа
-        MODEL_NAME = "gemini/gemini-1.5-pro"
+        # ПРЯМАЯ НАСТРОЙКА МОДЕЛИ (ОБХОД ОШИБКИ 404)
+        llm = ChatGoogleGenerativeAI(
+            model="gemini-1.5-flash",
+            google_api_key=api_key,
+            temperature=0.2
+        )
 
-        temp_filename = f"temp_{uploaded_file.name}"
-        with open(temp_filename, "wb") as f:
+        temp_name = f"temp_{uploaded_file.name}"
+        with open(temp_name, "wb") as f:
             f.write(uploaded_file.getbuffer())
 
         try:
-            with st.spinner("Агенты работают..."):
+            with st.spinner("Агенты обсуждают договор..."):
 
-                # --- АГЕНТЫ ---
+                # АГЕНТЫ (теперь используют объект llm напрямую)
                 analyst = Agent(
-                    role="Юрист-аналитик",
-                    goal="Извлечь условия договора.",
-                    backstory="Ты профи по документам.",
+                    role="Юрист",
+                    goal="Найти условия в файле.",
+                    backstory="Ты профи по текстам.",
                     tools=[file_reader],
-                    llm=MODEL_NAME,
+                    llm=llm,
                     verbose=True
                 )
 
                 risk_officer = Agent(
-                    role="Оценщик рисков",
-                    goal="Найти нарушения регламента.",
+                    role="Риск-менеджер",
+                    goal="Найти нарушения.",
                     backstory="Ты защищаешь студента.",
-                    tools=[check_legal_keywords],
-                    llm=MODEL_NAME,
+                    tools=[legal_tool],
+                    llm=llm,
                     verbose=True
                 )
 
-                coordinator = Agent(
-                    role="Координатор",
-                    goal="Вынести вердикт.",
-                    backstory="Ты принимаешь решение.",
-                    llm=MODEL_NAME,
-                    verbose=True
-                )
-
-                # --- ЗАДАЧИ ---
-                t1 = Task(description=f"Разбери файл {temp_filename}.", expected_output="Структура договора.",
-                          agent=analyst)
-
-                t2 = Task(description=f"Сверь с регламентом: {university_regulations}.",
-                          expected_output="Список проблем.", agent=risk_officer)
-
-                t3 = Task(description="Если есть риски, напиши план правок. Если нет - 'Все ок'.",
-                          expected_output="План действий.", agent=risk_officer)
-
-                t4 = Task(description="Выдай финальный вердикт.", expected_output="Pydantic объект.", agent=coordinator,
+                # ЗАДАЧИ
+                t1 = Task(description=f"Прочитай {temp_name}", expected_output="Условия.", agent=analyst)
+                t2 = Task(description=f"Сверь с {university_regulations}", expected_output="Риски.", agent=risk_officer)
+                t3 = Task(description="Выдай вердикт.", expected_output="Pydantic объект.", agent=risk_officer,
                           output_pydantic=ContractAnalysis)
 
-                # --- ЗАПУСК ---
-                crew = Crew(agents=[analyst, risk_officer, coordinator], tasks=[t1, t2, t3, t4], memory=True,
-                            verbose=True)
-
+                crew = Crew(agents=[analyst, risk_officer], tasks=[t1, t2, t3], memory=True)
                 result = crew.kickoff()
 
-                # --- ВЫВОД ---
                 st.success("Готово!")
                 if hasattr(result, 'pydantic') and result.pydantic:
                     res = result.pydantic
-                    st.metric("Вердикт", res.decision)
+                    st.metric("Решение", res.decision)
                     st.write("**Риски:**", res.risks)
-                    st.write("**Отсутствует:**", res.missing_points)
-                    st.info(f"**Резюме:** {res.summary}")
+                    st.info(f"**Суть:** {res.summary}")
                 else:
                     st.write(result.raw)
 
         except Exception as e:
-            st.error(f"Ошибка анализа: {e}")
-            st.info("Если видите ошибку 400 - проверьте, что ключ точно активен в Google AI Studio.")
+            st.error(f"Ошибка: {e}")
         finally:
-            if os.path.exists(temp_filename):
-                os.remove(temp_filename)
+            if os.path.exists(temp_name):
+                os.remove(temp_name)
