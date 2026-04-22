@@ -13,7 +13,6 @@ from pydantic import BaseModel, Field
 from crewai import Agent, Task, Crew
 from crewai.tools import tool
 from crewai_tools import FileReadTool
-from langchain_google_genai import ChatGoogleGenerativeAI
 
 # --- Настройка страницы ---
 st.set_page_config(page_title="Reviewer Pro (Option 13)", layout="wide")
@@ -68,13 +67,11 @@ if st.button("Запустить проверку") and uploaded_file:
     if not api_key:
         st.error("Пожалуйста, введите API ключ в боковой панели!")
     else:
-        # Прямое подключение через Langchain (решает ошибку 404)
-        os.environ["GOOGLE_API_KEY"] = api_key
-        gemini_llm = ChatGoogleGenerativeAI(
-            model="gemini-1.5-flash",
-            google_api_key=api_key,
-            temperature=0.3
-        )
+        # Устанавливаем ключ для встроенного движка CrewAI (LiteLLM)
+        os.environ["GEMINI_API_KEY"] = api_key
+
+        # Точное имя модели, которое обходит ошибку 404
+        MODEL_NAME = "gemini/gemini-1.5-flash-002"
 
         # Сохраняем файл для инструмента FileReadTool (Концепция 1: Files)
         temp_filename = f"temp_{uploaded_file.name}"
@@ -84,13 +81,13 @@ if st.button("Запустить проверку") and uploaded_file:
         try:
             with st.spinner("Мультиагентная система анализирует документ..."):
 
-                # 🤖 АГЕНТЫ
+                # 🤖 АГЕНТЫ (Передаем модель простой строкой, чтобы избежать ошибки Pydantic)
                 analyst = Agent(
                     role="Юрист-аналитик",
                     goal="Извлечь структуру и условия договора из файла.",
                     backstory="Ты эксперт по документам. Твоя задача — прочитать файл и выписать условия.",
                     tools=[file_reader],
-                    llm=gemini_llm,
+                    llm=MODEL_NAME,
                     verbose=True
                 )
 
@@ -99,7 +96,7 @@ if st.button("Запустить проверку") and uploaded_file:
                     goal="Найти противоречия и опасные пункты.",
                     backstory="Ты защищаешь интересы студентов. Ты ищешь штрафы и скрытые угрозы.",
                     tools=[check_legal_match],
-                    llm=gemini_llm,
+                    llm=MODEL_NAME,
                     verbose=True
                 )
 
@@ -107,7 +104,7 @@ if st.button("Запустить проверку") and uploaded_file:
                     role="Координатор практики",
                     goal="Сформировать финальное решение.",
                     backstory="Ты финальный судья. Ты решаешь, допускать ли договор к подписанию.",
-                    llm=gemini_llm,
+                    llm=MODEL_NAME,
                     verbose=True
                 )
 
@@ -136,7 +133,7 @@ if st.button("Запустить проверку") and uploaded_file:
                     expected_output="Объект со структурой Pydantic.",
                     agent=coordinator,
                     output_pydantic=ContractAnalysis,
-                    human_input=True  # Концепция 5: HITL (Остановка для подтверждения человеком)
+                    human_input=True  # Концепция 5: HITL (Остановка для подтверждения человеком в терминале)
                 )
 
                 # 🚀 ЭКИПАЖ
@@ -148,7 +145,7 @@ if st.button("Запустить проверку") and uploaded_file:
                 )
 
                 st.info(
-                    "💡 Процесс запущен. Посмотри в терминал PyCharm — система ждет твоего подтверждения (HITL) перед финалом.")
+                    "💡 Процесс запущен. Посмотри в терминал — после анализа система попросит подтвердить результат (HITL).")
                 result = crew.kickoff()
 
                 # Вывод результата
