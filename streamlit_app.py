@@ -69,7 +69,7 @@ if st.button("Запустить проверку") and uploaded_file:
     else:
         # Установка ключа в окружение для CrewAI
         os.environ["GEMINI_API_KEY"] = api_key
-        gemini_llm = LLM(model="gemini/gemini-1.5-flash", api_key=api_key)
+        gemini_llm = LLM(model="gemini/gemini-1.5-flash-latest", api_key=api_key)
 
         # Сохраняем файл для инструмента FileReadTool
         temp_filename = f"temp_{uploaded_file.name}"
