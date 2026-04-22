@@ -75,7 +75,7 @@ if st.button("Запустить анализ") and uploaded_file:
     else:
         # Настройка ключа и стабильной версии модели
         os.environ["GEMINI_API_KEY"] = api_key
-        MODEL_NAME = "gemini/gemini-1.5-flash-002"
+        MODEL_NAME = "gemini/gemini-1.5-flash"
 
         # Сохранение временного файла для агентов
         temp_filename = f"temp_{uploaded_file.name}"
