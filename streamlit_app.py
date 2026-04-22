@@ -66,7 +66,7 @@ if st.button("Запустить анализ") and uploaded_file:
         # Устанавливаем ключ
         os.environ["GEMINI_API_KEY"] = api_key
         # Используем стандартную модель для свежего ключа
-        MODEL_NAME = "gemini/gemini-1.5-flash"
+        MODEL_NAME = "gemini/gemini-1.5-pro"
 
         temp_filename = f"temp_{uploaded_file.name}"
         with open(temp_filename, "wb") as f:
