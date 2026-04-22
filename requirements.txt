@@ -1,3 +1,4 @@
 streamlit
 crewai[google-genai]
+crewai-tools
 pydantic
