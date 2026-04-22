@@ -10,9 +10,10 @@ except ImportError:
 
 import streamlit as st
 from pydantic import BaseModel, Field
-from crewai import Agent, Task, Crew, LLM
+from crewai import Agent, Task, Crew
 from crewai.tools import tool
 from crewai_tools import FileReadTool
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 # --- Настройка страницы ---
 st.set_page_config(page_title="Reviewer Pro (Option 13)", layout="wide")
@@ -33,7 +34,7 @@ university_regulations = st.sidebar.text_area(
 
 
 # ==========================================
-# 📊 PYDANTIC СХЕМА
+# 📊 PYDANTIC СХЕМА (Структурированный вывод)
 # ==========================================
 class ContractAnalysis(BaseModel):
     decision: str = Field(description="Вердикт: Одобрено / На доработку / Отклонено")
@@ -51,9 +52,9 @@ file_reader = FileReadTool()
 @tool("Compliance Checker")
 def check_legal_match(text: str) -> str:
     """Проверяет текст на соответствие ключевым юридическим терминам практики."""
-    keywords = ["практика", "обучение", "договор", "стороны"]
+    keywords = ["практика", "обучение", "договор", "стороны", "обязательства"]
     found = [word for word in keywords if word.lower() in text.lower()]
-    return f"Найдено совпадений по ключевым терминам: {len(found)} из {len(keywords)}."
+    return f"Проверка завершена. Найдено совпадений: {len(found)} из {len(keywords)}."
 
 
 # ==========================================
@@ -67,23 +68,27 @@ if st.button("Запустить проверку") and uploaded_file:
     if not api_key:
         st.error("Пожалуйста, введите API ключ в боковой панели!")
     else:
-        # Установка ключа в окружение для CrewAI
-        os.environ["GEMINI_API_KEY"] = api_key
-        gemini_llm = LLM(model="gemini/gemini-pro", api_key=api_key)
+        # Прямое подключение через Langchain (решает ошибку 404)
+        os.environ["GOOGLE_API_KEY"] = api_key
+        gemini_llm = ChatGoogleGenerativeAI(
+            model="gemini-1.5-flash",
+            google_api_key=api_key,
+            temperature=0.3
+        )
 
-        # Сохраняем файл для инструмента FileReadTool
+        # Сохраняем файл для инструмента FileReadTool (Концепция 1: Files)
         temp_filename = f"temp_{uploaded_file.name}"
         with open(temp_filename, "wb") as f:
             f.write(uploaded_file.getbuffer())
 
         try:
-            with st.spinner("Агенты анализируют документ..."):
+            with st.spinner("Мультиагентная система анализирует документ..."):
 
                 # 🤖 АГЕНТЫ
                 analyst = Agent(
                     role="Юрист-аналитик",
                     goal="Извлечь структуру и условия договора из файла.",
-                    backstory="Ты профессионал в разборе юридических документов. Твоя задача — точно выписать условия.",
+                    backstory="Ты эксперт по документам. Твоя задача — прочитать файл и выписать условия.",
                     tools=[file_reader],
                     llm=gemini_llm,
                     verbose=True
@@ -91,8 +96,8 @@ if st.button("Запустить проверку") and uploaded_file:
 
                 risk_officer = Agent(
                     role="Оценщик рисков",
-                    goal="Найти противоречия и опасные пункты в договоре.",
-                    backstory="Ты эксперт по безопасности. Твоя задача — защитить интересы студента и университета.",
+                    goal="Найти противоречия и опасные пункты.",
+                    backstory="Ты защищаешь интересы студентов. Ты ищешь штрафы и скрытые угрозы.",
                     tools=[check_legal_match],
                     llm=gemini_llm,
                     verbose=True
@@ -100,8 +105,8 @@ if st.button("Запустить проверку") and uploaded_file:
 
                 coordinator = Agent(
                     role="Координатор практики",
-                    goal="Сформировать финальное решение по документу.",
-                    backstory="Ты принимаешь решение, можно ли отправлять студента на практику по этому договору.",
+                    goal="Сформировать финальное решение.",
+                    backstory="Ты финальный судья. Ты решаешь, допускать ли договор к подписанию.",
                     llm=gemini_llm,
                     verbose=True
                 )
@@ -109,41 +114,41 @@ if st.button("Запустить проверку") and uploaded_file:
                 # 📋 ЗАДАЧИ
                 t1 = Task(
                     description=f"Прочитай файл {temp_filename} и опиши ключевые разделы.",
-                    expected_output="Структура договора и список условий.",
+                    expected_output="Структурированное содержание договора.",
                     agent=analyst
                 )
 
                 t2 = Task(
-                    description=f"Проверь извлеченные условия на соответствие регламенту: {university_regulations}.",
+                    description=f"Проверь условия на соответствие регламенту: {university_regulations}.",
                     expected_output="Список рисков и отсутствующих пунктов.",
                     agent=risk_officer
                 )
 
-                # Концепция 4: Conditional Task (логика запуска зашита в описание)
+                # Концепция 4: Conditional Task (логика запуска)
                 t3 = Task(
-                    description="Если найдены критические ошибки, сформируй список правок. Если всё чисто, подтверди это.",
-                    expected_output="План действий по исправлению договора.",
+                    description="Если в t2 найдены риски, составь план правок. Если рисков нет, напиши 'Правки не требуются'.",
+                    expected_output="Список необходимых изменений в договоре.",
                     agent=risk_officer
                 )
 
                 t4 = Task(
-                    description="Собери результаты и выдай итоговый вердикт.",
+                    description="Подведи итог всей проверки и сформируй вердикт.",
                     expected_output="Объект со структурой Pydantic.",
                     agent=coordinator,
                     output_pydantic=ContractAnalysis,
-                    human_input=True  # Концепция 5: HITL (требует подтверждения в терминале)
+                    human_input=True  # Концепция 5: HITL (Остановка для подтверждения человеком)
                 )
 
-                # 🚀 ЭКИПАЖ (Концепция 3: Memory)
+                # 🚀 ЭКИПАЖ
                 crew = Crew(
                     agents=[analyst, risk_officer, coordinator],
                     tasks=[t1, t2, t3, t4],
-                    memory=True,
+                    memory=True,  # Концепция 3: Memory
                     verbose=True
                 )
 
                 st.info(
-                    "💡 Процесс запущен. На этапе финального утверждения (HITL) сервер может ожидать вашего ввода в логах.")
+                    "💡 Процесс запущен. Посмотри в терминал PyCharm — система ждет твоего подтверждения (HITL) перед финалом.")
                 result = crew.kickoff()
 
                 # Вывод результата
