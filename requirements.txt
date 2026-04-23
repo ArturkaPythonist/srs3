@@ -3,4 +3,3 @@ crewai
 crewai-tools
 pydantic
 pysqlite3-binary
-langchain-google-genai
