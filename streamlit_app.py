@@ -63,14 +63,15 @@ if st.button("Начать анализ") and uploaded_file:
     if not api_key:
         st.error("Ошибка: API ключ не найден!")
     else:
-        # Устанавливаем переменную окружения, которую ищет CrewAI
+        # Устанавливаем ключ в окружение
         os.environ["GEMINI_API_KEY"] = api_key
 
-        # СОЗДАЕМ ОБЪЕКТ LLM (Это решает проблему Pydantic и 404)
-        # В новых версиях CrewAI это единственный верный способ
+        # ФИКС ОШИБКИ 404:
+        # Используем "custom_llm_provider", чтобы LiteLLM не тупил с v1beta
         my_llm = LLM(
             model="gemini/gemini-1.5-flash",
-            api_key=api_key
+            api_key=api_key,
+            base_url="https://generativelanguage.googleapis.com/v1beta"  # Явно указываем адрес
         )
 
         temp_name = f"temp_{uploaded_file.name}"
