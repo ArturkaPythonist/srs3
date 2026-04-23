@@ -64,15 +64,19 @@ if st.button("Начать анализ") and uploaded_file:
         st.error("Ошибка: API ключ не найден!")
     else:
         # Устанавливаем ключ в окружение
+        # Устанавливаем ключ во все возможные переменные для надежности
+        os.environ["GOOGLE_API_KEY"] = api_key
         os.environ["GEMINI_API_KEY"] = api_key
 
-        # ФИКС ОШИБКИ 404:
-        # Используем "custom_llm_provider", чтобы LiteLLM не тупил с v1beta
-        my_llm = LLM(
-            model="gemini/gemini-1.5-flash",
-            api_key=api_key,
-            base_url="https://generativelanguage.googleapis.com/v1beta"  # Явно указываем адрес
-        )
+        try:
+            # Используем самый стабильный синтаксис для google провайдера
+            my_llm = LLM(
+                model="google/gemini-1.5-flash",
+                api_key=api_key
+            )
+        except Exception:
+            # Запасной вариант, если первый не сработал
+            my_llm = "google/gemini-1.5-flash"
 
         temp_name = f"temp_{uploaded_file.name}"
         with open(temp_name, "wb") as f:
