@@ -37,7 +37,7 @@ if uploaded_file:
         goal='Выявить ключевые категории проблем и достижений из отзывов',
         backstory='Вы эксперт по анализу текстов и оценке качества образования.',
         tools=[csv_tool],
-        llm="gemini/gemini-1.5-flash-latest",
+        llm="gemini/gemini-pro",
         verbose=True
     )
 
@@ -45,7 +45,7 @@ if uploaded_file:
         role='Карьерный консультант',
         goal='Связать образовательные пробелы с текущими позициями выпускников',
         backstory='Вы анализируете влияние программы на карьерный трек.',
-        llm="gemini/gemini-1.5-flash-latest",
+        llm="gemini/gemini-pro",
         verbose=True
     )
 
@@ -53,7 +53,7 @@ if uploaded_file:
         role='Проректор по учебной работе',
         goal='Подготовить итоговый управленческий отчет с рекомендациями',
         backstory='Вы превращаете сырые данные в стратегические решения университета.',
-        llm="gemini/gemini-1.5-flash-latest",
+        llm="gemini/gemini-pro",
         verbose=True
     )
 
