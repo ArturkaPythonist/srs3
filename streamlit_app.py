@@ -1,123 +1,127 @@
 import streamlit as st
+import os
 import pandas as pd
 from crewai import Agent, Task, Crew, Process
 from crewai_tools import FileReadTool
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-st.set_page_config(page_title="Анализатор выпускников", layout="wide")
-st.title("🎓 Аналитическая система «Обратная связь выпускников»")
+# Настройка страницы
+st.set_page_config(page_title="Graduate Feedback Analyzer", layout="wide")
+st.title("🎓 Анализатор обратной связи выпускников")
 
-# Безопасное получение ключа для облака
-try:
+# Метод получения API ключа (приоритет: st.secrets -> прямой ввод)
+api_key = "AIzaSyB1CdIDUMPedGOX_yF2auWzPDYupPgu814"
+if "GOOGLE_API_KEY" in st.secrets:
     api_key = st.secrets["GOOGLE_API_KEY"]
-except FileNotFoundError:
-    st.error("Ключ API не найден. Настройте Secrets в панели Streamlit!")
-    st.stop()
 
-# Инициализация стабильного Gemini
+# Инициализация стабильной модели Gemini
 llm = ChatGoogleGenerativeAI(
     model="gemini-1.5-pro",
     temperature=0.3,
-    max_tokens=2000,
+    max_tokens=2500,
     google_api_key=api_key
 )
 
 # 1. Загрузка данных
-uploaded_file = st.file_uploader("Загрузите CSV с отзывами (колонки: review, job)", type=["csv"])
+st.sidebar.header("Загрузка данных")
+uploaded_file = st.sidebar.file_uploader("Загрузите CSV (колонки: review, job)", type=["csv"])
 
 if uploaded_file:
-    # Сохраняем файл временно для текущей сессии
-    with open("temp_feedback.csv", "wb") as f:
+    # Сохранение временного файла для инструментов CrewAI
+    temp_file_path = "grad_data.csv"
+    with open(temp_file_path, "wb") as f:
         f.write(uploaded_file.getbuffer())
 
-    st.success("Файл загружен. Начинаем анализ...")
+    st.success("Файл успешно загружен!")
 
-    csv_tool = FileReadTool(file_path='temp_feedback.csv')
+    # Инструменты
+    csv_tool = FileReadTool(file_path=temp_file_path)
 
+    # Определение Агентов (ИСПРАВЛЕНО: убрали memory=True, чтобы не ломался Pydantic)
     analyst = Agent(
         role='Тематический аналитик',
-        goal='Выделить ключевые темы и категории проблем из отзывов',
-        backstory='Вы эксперт по качественному анализу текста. Сопоставляете отзывы с моделью качества образования.',
+        goal='Выявить ключевые категории проблем и достижений из отзывов выпускников',
+        backstory='Вы эксперт по анализу текстов и оценке качества образования. Ваша задача — категоризировать отзывы.',
         tools=[csv_tool],
         llm=llm,
         verbose=True
     )
 
     career_specialist = Agent(
-        role='Карьерный стратег',
-        goal='Связать проблемы обучения с карьерными успехами выпускников',
-        backstory='Вы анализируете, как пробелы в знаниях влияют на текущие позиции выпускников.',
+        role='Карьерный консультант',
+        goal='Связать образовательные пробелы с текущими позициями выпускников',
+        backstory='Вы анализируете, как отсутствие определенных навыков в программе влияет на карьерный трек.',
         llm=llm,
         verbose=True
     )
 
-    report_expert = Agent(
-        role='Проректор по развитию',
-        goal='Подготовить итоговый управленческий отчет',
-        backstory='Вы принимаете решения. Вам нужен четкий список сильных сторон, слабостей и рекомендаций.',
+    prorector = Agent(
+        role='Проректор по учебной работе',
+        goal='Подготовить итоговый управленческий отчет с рекомендациями',
+        backstory='Вы превращаете сырые данные в стратегические решения для университета.',
         llm=llm,
         verbose=True
     )
 
-    task1 = Task(
-        description="Проанализируй temp_feedback.csv. Выдели основные жалобы и похвалу по категориям: Инфраструктура, Актуальность, Преподавание.",
-        expected_output="Список тематических кластеров с цитатами.",
+    # Определение Задач
+    task_analysis = Task(
+        description="Проанализируй отзывы из файла. Категоризируй их: Инфраструктура, Актуальность, Преподавание.",
+        expected_output="Структурированный список тем с примерами отзывов.",
         agent=analyst
     )
 
-    task2 = Task(
-        description="Соотнеси отзывы из задачи 1 с текущими должностями выпускников (job). Найди закономерности.",
-        expected_output="Аналитическая записка о связи программы с карьерой.",
+    task_career = Task(
+        description="Сопоставь найденные проблемы с текущими должностями выпускников (колонки job).",
+        expected_output="Отчет о влиянии программы на карьеру.",
         agent=career_specialist,
-        context=[task1]
+        context=[task_analysis]
     )
 
-    if st.button("Запустить полный цикл анализа"):
-        with st.spinner("Агенты изучают данные..."):
+    if st.button("Запустить анализ агентами"):
+        with st.spinner("Агенты обрабатывают данные..."):
 
-            analysis_crew = Crew(
+            # Первый этап: Базовый анализ (здесь память команды работает без ошибок)
+            base_crew = Crew(
                 agents=[analyst, career_specialist],
-                tasks=[task1, task2],
+                tasks=[task_analysis, task_career],
                 process=Process.sequential,
                 memory=True
             )
 
-            intermediate_result = analysis_crew.kickoff()
+            intermediate_result = base_crew.kickoff()
 
-            # Условная задача (Conditional Task)
-            needs_refinement = "недостаточно" in str(intermediate_result).lower() or "противореч" in str(
-                intermediate_result).lower()
+            # Логика проверки результата на необходимость дополнительного анализа
+            result_str = str(intermediate_result).lower()
+            needs_more = any(word in result_str for word in ["противореч", "недостаточно", "неясно", "uncertain"])
 
-            if needs_refinement:
-                st.warning("Обнаружены противоречивые сигналы. Запущена задача уточняющего анализа...")
+            if needs_more:
+                st.warning("Обнаружены противоречивые данные. Запуск уточняющего анализа...")
                 refinement_task = Task(
-                    description="Проведи глубокое погружение в найденные противоречия. Перепроверь данные еще раз.",
-                    expected_output="Уточненные данные по спорным категориям.",
+                    description="Найдены противоречия. Проведи повторный глубокий анализ по спорным категориям.",
+                    expected_output="Уточненная сводка данных.",
                     agent=analyst
                 )
                 refine_crew = Crew(agents=[analyst], tasks=[refinement_task])
-                refine_crew.kickoff()
+                intermediate_result = refine_crew.kickoff()
 
-            st.subheader("📝 Проект управленческого отчета подготовлен")
-
-            # Финальный отчет (human_input=False для работы в облаке)
-            final_task = Task(
-                description="Сформируй финальный отчет: 1. Сильные стороны 2. Слабости 3. Рекомендации.",
-                expected_output="Структурированный текст отчета.",
-                agent=report_expert,
-                human_input=False
+            # Финальный отчет
+            final_report_task = Task(
+                description="Подготовь финальный отчет: Сильные стороны, Критические слабости, Рекомендации.",
+                expected_output="Управленческий отчет в формате Markdown.",
+                agent=prorector,
+                context=[task_career]
             )
 
-            report_crew = Crew(
-                agents=[report_expert],
-                tasks=[final_task],
-                context=[task2]
+            final_crew = Crew(
+                agents=[prorector],
+                tasks=[final_report_task]
             )
 
-            final_report = report_crew.kickoff()
+            final_output = final_crew.kickoff()
 
-            st.markdown("### Итоговый результат:")
-            st.write(final_report)
+            st.markdown("---")
+            st.subheader("📊 Итоговый управленческий отчет")
+            st.markdown(final_output)
 
 else:
-    st.info("Пожалуйста, загрузите CSV файл. Пример формата: review, job")
+    st.info("Ожидание загрузки CSV файла для начала работы.")
