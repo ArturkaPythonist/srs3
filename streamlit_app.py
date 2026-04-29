@@ -2,21 +2,37 @@ import streamlit as st
 import os
 from crewai import Agent, Task, Crew, Process
 from crewai_tools import FileReadTool
+from google import genai
 
 # Настройка страницы
 st.set_page_config(page_title="Graduate Feedback Analyzer", layout="wide")
 st.title("🎓 Анализатор обратной связи выпускников")
 
 # БЕЗОПАСНОЕ ПОЛУЧЕНИЕ КЛЮЧА
-# Приложение будет искать ключ в Secrets на Streamlit Cloud
 if "GOOGLE_API_KEY" in st.secrets:
     api_key = st.secrets["GOOGLE_API_KEY"]
 else:
     st.error("Ошибка: API ключ не найден в Secrets. Добавьте GOOGLE_API_KEY в настройках Streamlit Cloud.")
     st.stop()
 
-# Переменная окружения для внутренней работы CrewAI
 os.environ["GEMINI_API_KEY"] = api_key
+
+# === СКАНЕР МОДЕЛЕЙ (ОТЛАДКА API) ===
+st.sidebar.markdown("### 🛠 Отладка API")
+if st.sidebar.button("Просканировать доступные модели"):
+    with st.sidebar.status("Стучимся на сервер Google..."):
+        try:
+            client = genai.Client(api_key=api_key)
+            # Вытягиваем только те модели, которые умеют генерировать текст
+            models = [m.name.replace("models/", "") for m in client.models.list() if
+                      "generateContent" in m.supported_generation_methods]
+            st.success("Сканирование завершено!")
+            st.write("**Разрешенные модели для твоего ключа:**")
+            for m in models:
+                st.code(f"gemini/{m}")
+        except Exception as e:
+            st.error(f"Ошибка сканирования: {e}")
+# =====================================
 
 st.sidebar.header("Загрузка данных")
 uploaded_file = st.sidebar.file_uploader("Загрузите CSV (колонки: review, job)", type=["csv"])
@@ -31,13 +47,13 @@ if uploaded_file:
 
     csv_tool = FileReadTool(file_path=temp_file_path)
 
-    # Агенты: используем стабильную модель Flash и убираем конфликтующие параметры
+    # Агенты: используем точную версию с припиской -002 (наиболее стабильная)
     analyst = Agent(
         role='Тематический аналитик',
         goal='Выявить ключевые категории проблем и достижений из отзывов',
         backstory='Вы эксперт по анализу текстов и оценке качества образования.',
         tools=[csv_tool],
-        llm="gemini/gemini-pro",
+        llm="gemini/gemini-1.5-flash-002",
         verbose=True
     )
 
@@ -45,19 +61,18 @@ if uploaded_file:
         role='Карьерный консультант',
         goal='Связать образовательные пробелы с текущими позициями выпускников',
         backstory='Вы анализируете влияние программы на карьерный трек.',
-        llm="gemini/gemini-pro",
+        llm="gemini/gemini-1.5-flash-002",
         verbose=True
     )
 
     prorector = Agent(
         role='Проректор по учебной работе',
         goal='Подготовить итоговый управленческий отчет с рекомендациями',
-        backstory='Вы превращаете сырые данные в стратегические решения университета.',
-        llm="gemini/gemini-pro",
+        backstory='Вы превращаете сырые данные в стратегические решения.',
+        llm="gemini/gemini-1.5-flash-002",
         verbose=True
     )
 
-    # Задачи
     task_analysis = Task(
         description="Проанализируй отзывы из файла grad_data.csv. Категоризируй их (Инфраструктура, Актуальность, Преподавание).",
         expected_output="Структурированный список тем с примерами.",
@@ -74,7 +89,6 @@ if uploaded_file:
     if st.button("Запустить анализ агентами"):
         with st.spinner("Агенты анализируют данные..."):
             try:
-                # Основной процесс
                 base_crew = Crew(
                     agents=[analyst, career_specialist],
                     tasks=[task_analysis, task_career],
@@ -83,7 +97,6 @@ if uploaded_file:
 
                 intermediate_result = base_crew.kickoff()
 
-                # Финальный отчет
                 final_report_task = Task(
                     description="Подготовь финальный отчет: Сильные стороны, Критические слабости, Рекомендации.",
                     expected_output="Управленческий отчет в формате Markdown.",
