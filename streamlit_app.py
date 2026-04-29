@@ -1,25 +1,24 @@
 import streamlit as st
 import os
 import pandas as pd
-from crewai import Agent, Task, Crew, Process
+from crewai import Agent, Task, Crew, Process, LLM  # <-- Добавили LLM сюда
 from crewai_tools import FileReadTool
-from langchain_google_genai import ChatGoogleGenerativeAI
 
 # Настройка страницы
 st.set_page_config(page_title="Graduate Feedback Analyzer", layout="wide")
 st.title("🎓 Анализатор обратной связи выпускников")
 
-# Метод получения API ключа (приоритет: st.secrets -> прямой ввод)
+# Метод получения API ключа
 api_key = "AIzaSyB1CdIDUMPedGOX_yF2auWzPDYupPgu814"
 if "GOOGLE_API_KEY" in st.secrets:
     api_key = st.secrets["GOOGLE_API_KEY"]
 
-# Инициализация стабильной модели Gemini
-llm = ChatGoogleGenerativeAI(
-    model="gemini-1.5-pro",
-    temperature=0.3,
-    max_tokens=2500,
-    google_api_key=api_key
+# ВАЖНО: Новая инициализация LLM для CrewAI 1.0+
+# Используем внутренний класс библиотеки
+gemini_llm = LLM(
+    model="gemini/gemini-1.5-pro",
+    api_key=api_key,
+    temperature=0.3
 )
 
 # 1. Загрузка данных
@@ -37,13 +36,13 @@ if uploaded_file:
     # Инструменты
     csv_tool = FileReadTool(file_path=temp_file_path)
 
-    # Определение Агентов (ИСПРАВЛЕНО: убрали memory=True, чтобы не ломался Pydantic)
+    # Определение Агентов (передаем правильный gemini_llm)
     analyst = Agent(
         role='Тематический аналитик',
         goal='Выявить ключевые категории проблем и достижений из отзывов выпускников',
         backstory='Вы эксперт по анализу текстов и оценке качества образования. Ваша задача — категоризировать отзывы.',
         tools=[csv_tool],
-        llm=llm,
+        llm=gemini_llm,
         verbose=True
     )
 
@@ -51,7 +50,7 @@ if uploaded_file:
         role='Карьерный консультант',
         goal='Связать образовательные пробелы с текущими позициями выпускников',
         backstory='Вы анализируете, как отсутствие определенных навыков в программе влияет на карьерный трек.',
-        llm=llm,
+        llm=gemini_llm,
         verbose=True
     )
 
@@ -59,7 +58,7 @@ if uploaded_file:
         role='Проректор по учебной работе',
         goal='Подготовить итоговый управленческий отчет с рекомендациями',
         backstory='Вы превращаете сырые данные в стратегические решения для университета.',
-        llm=llm,
+        llm=gemini_llm,
         verbose=True
     )
 
@@ -80,7 +79,7 @@ if uploaded_file:
     if st.button("Запустить анализ агентами"):
         with st.spinner("Агенты обрабатывают данные..."):
 
-            # Первый этап: Базовый анализ (здесь память команды работает без ошибок)
+            # Первый этап: Базовый анализ
             base_crew = Crew(
                 agents=[analyst, career_specialist],
                 tasks=[task_analysis, task_career],
@@ -90,7 +89,7 @@ if uploaded_file:
 
             intermediate_result = base_crew.kickoff()
 
-            # Логика проверки результата на необходимость дополнительного анализа
+            # Логика проверки результата
             result_str = str(intermediate_result).lower()
             needs_more = any(word in result_str for word in ["противореч", "недостаточно", "неясно", "uncertain"])
 
@@ -121,7 +120,9 @@ if uploaded_file:
 
             st.markdown("---")
             st.subheader("📊 Итоговый управленческий отчет")
-            st.markdown(final_output)
+
+            # Приводим вывод к строке для безопасности новой версии
+            st.markdown(str(final_output))
 
 else:
     st.info("Ожидание загрузки CSV файла для начала работы.")
