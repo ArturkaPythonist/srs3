@@ -1,74 +1,125 @@
 import streamlit as st
-import os
+import pandas as pd
 from crewai import Agent, Task, Crew, Process
+from crewai_tools import FileReadTool
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-# Устанавливаем ключ напрямую для быстрого старта (ВНИМАНИЕ: не для продакшена!)
-os.environ["GOOGLE_API_KEY"] = "AIzaSyB1CdIDUMPedGOX_yF2auWzPDYupPgu814"
+st.set_page_config(page_title="Анализатор выпускников", layout="wide")
+st.title("🎓 Аналитическая система «Обратная связь выпускников»")
 
-# Настройка стабильной модели Gemini
+# Безопасное получение ключа для облака
+try:
+    api_key = st.secrets["GOOGLE_API_KEY"]
+except FileNotFoundError:
+    st.error("Ключ API не найден. Настройте Secrets в панели Streamlit!")
+    st.stop()
+
+# Инициализация стабильного Gemini
 llm = ChatGoogleGenerativeAI(
     model="gemini-1.5-pro",
-    temperature=0.5,
-    max_tokens=1024
+    temperature=0.3,
+    max_tokens=2000,
+    google_api_key=api_key
 )
 
-st.set_page_config(page_title="CrewAI + Streamlit", page_icon="🤖")
-st.title("🤖 Моя первая команда CrewAI")
-st.markdown("Это минимальное рабочее приложение на Streamlit.")
+# 1. Загрузка данных
+uploaded_file = st.file_uploader("Загрузите CSV с отзывами (колонки: review, job)", type=["csv"])
 
-# Поле для ввода темы
-topic = st.text_input("Введите тему для небольшого исследования:",
-                      "Влияние искусственного интеллекта на кибербезопасность")
+if uploaded_file:
+    # Сохраняем файл временно для текущей сессии
+    with open("temp_feedback.csv", "wb") as f:
+        f.write(uploaded_file.getbuffer())
 
-if st.button("Запустить агентов"):
-    with st.spinner("Агенты работают..."):
-        try:
-            # 1. Создаем агентов
-            researcher = Agent(
-                role='Старший исследователь',
-                goal=f'Найти ключевые факты по теме: {topic}',
-                backstory='Вы — опытный аналитик, умеющий находить суть в любой теме.',
-                verbose=True,
-                allow_delegation=False,
-                llm=llm
-            )
+    st.success("Файл загружен. Начинаем анализ...")
 
-            writer = Agent(
-                role='Технический писатель',
-                goal=f'Написать краткое и понятное резюме на основе исследования по теме: {topic}',
-                backstory='Вы умеете объяснять сложные концепции простым языком.',
-                verbose=True,
-                allow_delegation=False,
-                llm=llm
-            )
+    csv_tool = FileReadTool(file_path='temp_feedback.csv')
 
-            # 2. Создаем задачи
-            task1 = Task(
-                description=f'Собери 3 главных факта о: {topic}.',
-                expected_output='Список из 3 ключевых фактов.',
-                agent=researcher
-            )
+    analyst = Agent(
+        role='Тематический аналитик',
+        goal='Выделить ключевые темы и категории проблем из отзывов',
+        backstory='Вы эксперт по качественному анализу текста. Сопоставляете отзывы с моделью качества образования.',
+        tools=[csv_tool],
+        llm=llm,
+        verbose=True,
+        memory=True
+    )
 
-            task2 = Task(
-                description='Напиши один абзац (до 500 символов), обобщающий факты.',
-                expected_output='Связный абзац текста.',
-                agent=writer
-            )
+    career_specialist = Agent(
+        role='Карьерный стратег',
+        goal='Связать проблемы обучения с карьерными успехами выпускников',
+        backstory='Вы анализируете, как пробелы в знаниях влияют на текущие позиции выпускников.',
+        llm=llm,
+        verbose=True,
+        memory=True
+    )
 
-            # 3. Собираем команду (Crew)
-            crew = Crew(
-                agents=[researcher, writer],
+    report_expert = Agent(
+        role='Проректор по развитию',
+        goal='Подготовить итоговый управленческий отчет',
+        backstory='Вы принимаете решения. Вам нужен четкий список сильных сторон, слабостей и рекомендаций.',
+        llm=llm,
+        verbose=True
+    )
+
+    task1 = Task(
+        description="Проанализируй temp_feedback.csv. Выдели основные жалобы и похвалу по категориям: Инфраструктура, Актуальность, Преподавание.",
+        expected_output="Список тематических кластеров с цитатами.",
+        agent=analyst
+    )
+
+    task2 = Task(
+        description="Соотнеси отзывы из задачи 1 с текущими должностями выпускников (job). Найди закономерности.",
+        expected_output="Аналитическая записка о связи программы с карьерой.",
+        agent=career_specialist,
+        context=[task1]
+    )
+
+    if st.button("Запустить полный цикл анализа"):
+        with st.spinner("Агенты изучают данные..."):
+
+            analysis_crew = Crew(
+                agents=[analyst, career_specialist],
                 tasks=[task1, task2],
-                process=Process.sequential
+                process=Process.sequential,
+                memory=True
             )
 
-            # 4. Запускаем выполнение
-            result = crew.kickoff()
+            intermediate_result = analysis_crew.kickoff()
 
-            st.success("Готово!")
-            st.subheader("Результат:")
-            st.write(result)
+            # Условная задача (Conditional Task)
+            needs_refinement = "недостаточно" in str(intermediate_result).lower() or "противореч" in str(
+                intermediate_result).lower()
 
-        except Exception as e:
-            st.error(f"Произошла ошибка: {e}")
+            if needs_refinement:
+                st.warning("Обнаружены противоречивые сигналы. Запущена задача уточняющего анализа...")
+                refinement_task = Task(
+                    description="Проведи глубокое погружение в найденные противоречия. Перепроверь данные еще раз.",
+                    expected_output="Уточненные данные по спорным категориям.",
+                    agent=analyst
+                )
+                refine_crew = Crew(agents=[analyst], tasks=[refinement_task])
+                refine_crew.kickoff()
+
+            st.subheader("📝 Проект управленческого отчета подготовлен")
+
+            # Финальный отчет (human_input=False для работы в облаке)
+            final_task = Task(
+                description="Сформируй финальный отчет: 1. Сильные стороны 2. Слабости 3. Рекомендации.",
+                expected_output="Структурированный текст отчета.",
+                agent=report_expert,
+                human_input=False
+            )
+
+            report_crew = Crew(
+                agents=[report_expert],
+                tasks=[final_task],
+                context=[task2]
+            )
+
+            final_report = report_crew.kickoff()
+
+            st.markdown("### Итоговый результат:")
+            st.write(final_report)
+
+else:
+    st.info("Пожалуйста, загрузите CSV файл. Пример формата: review, job")
