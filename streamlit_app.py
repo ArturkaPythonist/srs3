@@ -1,6 +1,5 @@
 import streamlit as st
 import os
-import pandas as pd
 from crewai import Agent, Task, Crew, Process
 from crewai_tools import FileReadTool
 
@@ -8,7 +7,7 @@ from crewai_tools import FileReadTool
 st.set_page_config(page_title="Graduate Feedback Analyzer", layout="wide")
 st.title("🎓 Анализатор обратной связи выпускников")
 
-# Получение API ключа (твой новый ключ из Secrets)
+# Получение API ключа
 api_key = "AIzaSyB1CdIDUMPedGOX_yF2auWzPDYupPgu814"
 if "GOOGLE_API_KEY" in st.secrets:
     api_key = st.secrets["GOOGLE_API_KEY"]
@@ -35,7 +34,7 @@ if uploaded_file:
         goal='Выявить ключевые категории проблем и достижений из отзывов',
         backstory='Вы эксперт по анализу текстов и оценке качества образования.',
         tools=[csv_tool],
-        llm="gemini/gemini-1.5-pro",  # <-- Вот оно, решение проблемы Pydantic!
+        llm="gemini/gemini-1.5-pro",
         verbose=True
     )
 
@@ -43,7 +42,7 @@ if uploaded_file:
         role='Карьерный консультант',
         goal='Связать образовательные пробелы с текущими позициями выпускников',
         backstory='Вы анализируете влияние программы на карьерный трек.',
-        llm="gemini/gemini-1.5-pro",  # <-- Модель строкой
+        llm="gemini/gemini-1.5-pro",
         verbose=True
     )
 
@@ -51,7 +50,7 @@ if uploaded_file:
         role='Проректор по учебной работе',
         goal='Подготовить итоговый управленческий отчет с рекомендациями',
         backstory='Вы превращаете сырые данные в стратегические решения.',
-        llm="gemini/gemini-1.5-pro",  # <-- Модель строкой
+        llm="gemini/gemini-1.5-pro",
         verbose=True
     )
 
@@ -70,3 +69,38 @@ if uploaded_file:
 
     if st.button("Запустить анализ агентами"):
         with st.spinner("Агенты работают (это может занять около минуты)..."):
+            try:
+                base_crew = Crew(
+                    agents=[analyst, career_specialist],
+                    tasks=[task_analysis, task_career],
+                    process=Process.sequential,
+                    memory=False
+                )
+
+                # Запускаем анализ
+                intermediate_result = base_crew.kickoff()
+
+                # Финальный отчет
+                final_report_task = Task(
+                    description="Подготовь финальный отчет: Сильные стороны, Критические слабости, Рекомендации.",
+                    expected_output="Управленческий отчет в Markdown.",
+                    agent=prorector,
+                    context=[task_career]
+                )
+
+                final_crew = Crew(
+                    agents=[prorector],
+                    tasks=[final_report_task],
+                    memory=False
+                )
+
+                final_output = final_crew.kickoff()
+
+                st.markdown("---")
+                st.subheader("📊 Итоговый управленческий отчет")
+                st.markdown(str(final_output))
+            except Exception as e:
+                st.error(f"Произошла ошибка при выполнении: {e}")
+
+else:
+    st.info("Ожидание загрузки CSV файла для начала работы.")
