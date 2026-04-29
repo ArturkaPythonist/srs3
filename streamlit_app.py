@@ -40,8 +40,7 @@ if uploaded_file:
         backstory='Вы эксперт по качественному анализу текста. Сопоставляете отзывы с моделью качества образования.',
         tools=[csv_tool],
         llm=llm,
-        verbose=True,
-        memory=True
+        verbose=True
     )
 
     career_specialist = Agent(
@@ -49,8 +48,7 @@ if uploaded_file:
         goal='Связать проблемы обучения с карьерными успехами выпускников',
         backstory='Вы анализируете, как пробелы в знаниях влияют на текущие позиции выпускников.',
         llm=llm,
-        verbose=True,
-        memory=True
+        verbose=True
     )
 
     report_expert = Agent(
