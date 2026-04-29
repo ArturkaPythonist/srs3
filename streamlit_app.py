@@ -16,7 +16,7 @@ if "GOOGLE_API_KEY" in st.secrets:
 # ВАЖНО: Новая инициализация LLM для CrewAI 1.0+
 # Используем внутренний класс библиотеки
 gemini_llm = LLM(
-    model="gemini/gemini-1.5-pro",
+    model="gemini-1.5-pro",
     api_key=api_key,
     temperature=0.3
 )
