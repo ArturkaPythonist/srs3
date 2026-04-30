@@ -37,7 +37,8 @@ if uploaded_file:
         backstory='Вы эксперт по анализу текстов и оценке качества образования.',
         tools=[csv_tool],
         llm="gemini/gemini-2.5-flash",
-        verbose=True
+        verbose=True,
+        max_rpm=4
     )
 
     career_specialist = Agent(
@@ -45,7 +46,8 @@ if uploaded_file:
         goal='Связать образовательные пробелы с текущими позициями выпускников',
         backstory='Вы анализируете влияние программы на карьерный трек.',
         llm="gemini/gemini-2.5-flash",
-        verbose=True
+        verbose=True,
+        max_rpm=4
     )
 
     prorector = Agent(
@@ -53,7 +55,8 @@ if uploaded_file:
         goal='Подготовить итоговый управленческий отчет с рекомендациями',
         backstory='Вы превращаете сырые данные в стратегические решения университета.',
         llm="gemini/gemini-2.5-flash",
-        verbose=True
+        verbose=True,
+        max_rpm=4
     )
 
     task_analysis = Task(
