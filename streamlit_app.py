@@ -73,13 +73,14 @@ if uploaded_file:
     )
 
     if st.button("Запустить анализ агентами"):
-        with st.spinner("Агенты работают (это может занять около минуты)..."):
+        with st.spinner("Агенты работают (из-за лимитов Google это займет 2-3 минуты)..."):
             try:
                 base_crew = Crew(
                     agents=[analyst, career_specialist],
                     tasks=[task_analysis, task_career],
                     process=Process.sequential,
-                    memory=False
+                    memory=False,
+                    max_rpm=2
                 )
 
                 intermediate_result = base_crew.kickoff()
@@ -94,7 +95,8 @@ if uploaded_file:
                 final_crew = Crew(
                     agents=[prorector],
                     tasks=[final_report_task],
-                    memory=False
+                    memory=False,
+                    max_rpm=2
                 )
 
                 final_output = final_crew.kickoff()
